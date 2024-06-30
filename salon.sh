@@ -1,64 +1,79 @@
-#!/bin/bash
+#! /bin/bash
 
-PSQL="psql --username=yellowflash2041 --dbname=salon --tuples-only -c"
+PSQL="psql -X --username=freecodecamp --dbname=salon --tuples-only -c"
 
-echo -e "\n~~~~~ MY SALON ~~~~~"
+echo -e "\n~~~~~ MY SALON ~~~~~\n"
+echo -e "Welcome to My Salon, how can I help you?\n"
+
 
 MAIN_MENU() {
-  if [[ -z $1 ]]
+
+  if [[ $1 ]]
   then
-    MENU_TITLE="\nWelcome to My Salon, how can I help you?\n"
-  else
-    MENU_TITLE="\n$1"
+    echo -e "\n$1"
   fi
 
-  echo -e $MENU_TITLE
+  SERVICES=$($PSQL "SELECT * FROM services ORDER BY service_id")
+  
+  if [[ -z $SERVICES ]]
+  then
+    echo "Sorry, there is no service available"
+  fi
 
-  SERVICES_LIST=$($PSQL "SELECT service_id, name FROM services")
-  echo "$SERVICES_LIST" | while read SERVICEID BAR NAME
+  echo "$SERVICES" | while read SERVICE_ID BAR NAME
   do
-    echo "$SERVICEID) $NAME"
+    echo "$SERVICE_ID) $NAME"
   done
 
   read SERVICE_ID_SELECTED
+  if [[ ! $SERVICE_ID_SELECTED =~ ^[0-9]+$ ]]
+  then
+    MAIN_MENU "I could not find that service. What would you like today?"
+  fi
 
-  SERVICE_NAME=$($PSQL "SELECT name FROM services WHERE service_id='$SERVICE_ID_SELECTED'")
-  if [[ -z $SERVICE_NAME ]]
+  REQ_SERVICE_RESULT=$($PSQL "SELECT service_id FROM services WHERE service_id=$SERVICE_ID_SELECTED")
+  if [[ -z $REQ_SERVICE_RESULT ]]
   then
     MAIN_MENU "I could not find that service. What would you like today?"
   else
-    echo -e "\nWhat's your phone number?"
+    REQ_SERVICE_NAME=$($PSQL "SELECT name FROM services WHERE service_id=$SERVICE_ID_SELECTED") 
+    echo "What's your phone number?"
     read CUSTOMER_PHONE
 
-    CUSTOMER_ID=$($PSQL "SELECT customer_id FROM customers WHERE phone='$CUSTOMER_PHONE'")
-    if [[ -z $CUSTOMER_ID ]]
+    # find customer with phone number
+    CUSTOMER=$($PSQL "SELECT * FROM customers WHERE phone='$CUSTOMER_PHONE'")
+
+    # if not found 
+    if [[ -z $CUSTOMER ]]
     then
-      echo -e "\nI don't have a record for that phone number, what's your name?"
+      # ask customer name
+      echo "I don't have a record for that phone number, what's your name?"
       read CUSTOMER_NAME
 
-      INSERT_CUST_RECORD=$($PSQL "INSERT INTO customers(phone, name) VALUES('$CUSTOMER_PHONE', '$CUSTOMER_NAME')")
-      if [[ $INSERT_CUST_RECORD == "INSERT 0 1" ]]
-      then
-        CUSTOMER_ID=$($PSQL "SELECT customer_id FROM customers WHERE phone='$CUSTOMER_PHONE'")
-        echo -e "\nWhat time would you like your $(echo $SERVICE_NAME | sed 's/ //g'), $CUSTOMER_NAME?"
-        read SERVICE_TIME
+      # creating new customer
+      NEW_CUSTOMER_RESULT=$($PSQL "INSERT INTO customers(phone, name) VALUES ('$CUSTOMER_PHONE', '$CUSTOMER_NAME')")
 
-        INSERT_APPOINTMENT=$($PSQL "INSERT INTO appointments(customer_id, service_id, time) VALUES($CUSTOMER_ID, $SERVICE_ID_SELECTED, '$SERVICE_TIME')")
-        if [[ $INSERT_APPOINTMENT == "INSERT 0 1" ]]
-        then
-          echo -e "\nI have put you down for a $(echo $SERVICE_NAME | sed 's/ //g') at $SERVICE_TIME, $CUSTOMER_NAME."
-        fi
-      fi
+    fi
+    CUSTOMER_NAME=$($PSQL "SELECT name FROM customers WHERE phone='$CUSTOMER_PHONE'")
+
+    # ask time
+    echo "What time would you like your cut, $(echo $CUSTOMER_NAME | sed -E 's/^ *| *$//g')."
+    read SERVICE_TIME
+
+    # if no time input
+    if [[ -z $SERVICE_TIME ]]
+    then
+      MAIN_MENU "Wrong Time Input"
+    fi
+
+    CUSTOMER_ID=$($PSQL "SELECT customer_id FROM customers WHERE phone='$CUSTOMER_PHONE'")
+    NEW_APPOINTMENT_RESULT=$($PSQL "INSERT INTO appointments(customer_id, service_id, time) VALUES ($CUSTOMER_ID, $SERVICE_ID_SELECTED, '$SERVICE_TIME')")
+
+    if [[ $APPOINTMENT_RESULT=='INSERT 0 1' ]]
+    then
+      echo "I have put you down for a $(echo $REQ_SERVICE_NAME | sed -E 's/^ *| *$//g') at $(echo $SERVICE_TIME | sed -E 's/^ *| *$//g'), $(echo $CUSTOMER_NAME | sed -E 's/^ *| *$//g')."
     else
-      GET_CUSTOMER_NAME=$($PSQL "SELECT name FROM customers WHERE customer_id='$CUSTOMER_ID'")
-      echo -e "\nWhat time would you like your $(echo $SERVICE_NAME | sed 's/ //g'), $(echo $GET_CUSTOMER_NAME | sed 's/ //g')?"
-      read SERVICE_TIME
-
-      INSERT_APPOINTMENT=$($PSQL "INSERT INTO appointments(customer_id, service_id, time) VALUES($CUSTOMER_ID, $SERVICE_ID_SELECTED, '$SERVICE_TIME')")
-      if [[ $INSERT_APPOINTMENT == "INSERT 0 1" ]]
-      then
-        echo -e "\nI have put you down for a $(echo $SERVICE_NAME | sed 's/ //g') at $SERVICE_TIME, $(echo $GET_CUSTOMER_NAME | sed 's/ //g')."
-      fi
+      echo "Unexpected error has occurred."
     fi
   fi
 }
